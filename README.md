@@ -1,139 +1,84 @@
-# WireGuard Manager
+# WG Manager с авторизацией через PocketID
 
-A web-based management interface for WireGuard VPN servers, built with Python Flask. This application allows you to easily create, manage, and configure WireGuard clients through a user-friendly web interface.
+Это приложение для управления клиентами WireGuard с возможностью авторизации через PocketID.
 
-![Sofit Logo](static/logo.webp)
+## Настройка авторизации
 
-## Features
+### Включение/выключение авторизации
 
-- **Web Interface**: Clean, responsive UI built with Bootstrap for managing WireGuard clients
-- **Client Management**: Create, view, delete, suspend, and unsuspend WireGuard clients
-- **Automatic Configuration**: Generates complete WireGuard client configuration files
-- **IP Management**: Automatically assigns unique IP addresses from the configured subnet
-- **Search Functionality**: Easily find clients by name or IP address
-- **Pagination**: Handles large numbers of clients with paginated views
-- **Configuration Viewing**: View and copy client configurations directly from the web interface
-- **API Endpoints**: RESTful API for programmatic client management
+В файле `config.py` установите параметр `AUTH_ENABLED`:
+- `True` - включить авторизацию через PocketID
+- `False` - отключить авторизацию (приложение работает как раньше)
 
-## Prerequisites
+### Настройка PocketID
 
-- Linux server with WireGuard installed
-- Python 3.6+
-- Flask
-- WireGuard tools (`wg`, `wg-quick`)
+Для работы с PocketID необходимо установить следующие параметры в `config.py`:
 
-## Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/niteus-dev/wg-manager.git
-   cd wg-manager
-   ```
-
-2. Install Python dependencies:
-   ```bash
-   pip install flask
-   ```
-
-3. Ensure WireGuard is installed and configured:
-   ```bash
-   # Ubuntu/Debian
-   apt install wireguard wireguard-tools
-
-   # CentOS/RHEL
-   yum install wireguard-tools
-   ```
-
-4. Configure WireGuard server (example configuration in `/etc/wireguard/wg0.conf`):
-   ```ini
-   [Interface]
-   Address = 10.80.0.1/22
-   ListenPort = 51830
-   PrivateKey = YOUR_SERVER_PRIVATE_KEY
-   ```
-
-5. Adjust configuration in `config.py` if needed:
-   ```python
-   WG_INTERFACE = "wg0"           # Your WireGuard interface name
-   CONFIG_DIR = "/etc/wireguard"  # WireGuard configuration directory
-   CLIENTS_DIR = os.path.join(CONFIG_DIR, "clients")  # Client configs directory
-   NETWORK_CIDR = "10.80.0.0/22"  # VPN network range
-   SERVER_IP = "10.80.0.1"        # Server IP in VPN network
-   ALLOWED_IPS = "172.26.26.0/24" # IPs that clients can access
-   SERVER_HOST = "172.26.26.1"    # Public IP/domain of your server
-   ```
-
-## Usage
-
-1. Start the application:
-   ```bash
-   python app.py
-   ```
-
-2. Access the web interface at `http://your-server-ip:8080`
-
-3. Create a new client:
-   - Enter a client name in the input field
-   - Click "Create Client"
-   - Download or copy the generated configuration file
-
-4. Manage clients:
-   - **View**: Click "View" to see the client configuration
-   - **Suspend/Unsuspend**: Toggle the switch to disable/enable a client
-   - **Delete**: Click "Delete" to remove a client
-
-## API Endpoints
-
-- `GET /api/clients` - List all clients
-- `POST /api/clients` - Create a new client (JSON: `{"name": "client_name"}`)
-- `GET /api/client/<client_name>` - Get client configuration
-- `POST /api/client/<client_name>/suspend` - Suspend a client
-- `POST /api/client/<client_name>/unsuspend` - Unsuspend a client
-- `POST /api/client/<client_name>/delete` - Delete a client
-
-## Project Structure
-
-```
-wg-manager/
-├── app.py              # Main Flask application
-├── config.py           # Configuration settings
-├── routes.py           # URL routing and request handling
-├── wireguard.py        # WireGuard client management functions
-├── utils.py            # Utility functions
-├── static/
-│   └── logo.webp       # Application logo
-└── templates/
-    └── index.html      # Main web interface template
+```python
+# Параметры для интеграции с PocketID
+CLIENT_ID = os.environ.get("POCKETID_CLIENT_ID", "your_client_id_here")
+CLIENT_SECRET = os.environ.get("POCKETID_CLIENT_SECRET", "your_client_secret_here")
+REDIRECT_URI = os.environ.get("POCKETID_REDIRECT_URI", "http://localhost:8080/callback")
+AUTH_URL = "https://pocketid.ru/oauth/authorize"
+TOKEN_URL = "https://pocketid.ru/oauth/token"
+USERINFO_URL = "https://pocketid.ru/api/v1/userinfo"
 ```
 
-## Configuration
+Рекомендуется устанавливать эти параметры через переменные окружения:
 
-The application uses the following default configuration in `config.py`:
+```bash
+export POCKETID_CLIENT_ID="ваш_client_id"
+export POCKETID_CLIENT_SECRET="ваш_client_secret"
+export POCKETID_REDIRECT_URI="http://ваш_домен/callback"
+export SECRET_KEY="ваш_секретный_ключ_для_сессий"
+```
 
-- **WG_INTERFACE**: `wg0` - WireGuard interface name
-- **CONFIG_DIR**: `/etc/wireguard` - WireGuard configuration directory
-- **CLIENTS_DIR**: `/etc/wireguard/clients` - Directory for storing client configurations
-- **NETWORK_CIDR**: `10.80.0.0/22` - VPN network range (supports up to 1024 clients)
-- **SERVER_IP**: `10.80.0.1` - Server IP within the VPN network
-- **ALLOWED_IPS**: `172.26.26.0/24` - IPs accessible to VPN clients
-- **SERVER_HOST**: `172.26.26.1` - Public IP or domain of your server
+## Как это работает
 
-## Contributing
+### При включенной авторизации (AUTH_ENABLED = True):
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+1. Все маршруты (кроме `/login`, `/callback` и статических файлов) требуют авторизации
+2. При попытке доступа к защищенному маршруту незалогиненный пользователь перенаправляется на `/login`
+3. Маршрут `/login` перенаправляет пользователя на страницу авторизации PocketID
+4. После успешной авторизации пользователь возвращается на маршрут `/callback`
+5. В `/callback` происходит обмен кода авторизации на токен доступа и получение информации о пользователе
+6. Информация о пользователе сохраняется в сессии
+7. Пользователь перенаправляется на главную страницу
+8. При выходе маршрут `/logout` очищает сессию и перенаправляет на страницу входа
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+### При выключенной авторизации (AUTH_ENABLED = False):
 
-## License
+Приложение работает как раньше, без какой-либо проверки авторизации.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Пример использования
 
-## Acknowledgments
+1. Установите параметры авторизации через переменные окружения
+2. Установите `AUTH_ENABLED = True` в `config.py`
+3. Запустите приложение: `python app.py`
+4. Откройте в браузере `http://localhost:8080`
+5. Вы будете автоматически перенаправлены на страницу входа
+6. Нажмите на кнопку входа через PocketID
+7. После успешной авторизации вы попадете на главную страницу приложения
 
-- Made with ❤️ at **Sofit**
-- Built with [Flask](https://flask.palletsprojects.com/)
-- UI powered by [Bootstrap](https://getbootstrap.com/)
+## API маршруты
+
+- `GET /` - Главная страница со списком клиентов (требует авторизации если включена)
+- `POST /` - Создание нового клиента (требует авторизации если включена)
+- `GET /api/clients` - Получение списка клиентов в формате JSON (требует авторизации если включена)
+- `POST /api/clients` - Создание нового клиента через API (требует авторизации если включена)
+- `GET /api/client/<client_name>` - Получение конфигурации клиента (требует авторизации если включена)
+- `GET /client/<client_name>` - Скачивание конфигурационного файла клиента (требует авторизации если включена)
+- `POST /client/<name>/delete` - Удаление клиента (требует авторизации если включена)
+- `POST /api/client/<client_name>/suspend` - Отключение клиента (требует авторизации если включена)
+- `POST /api/client/<client_name>/unsuspend` - Включение клиента (требует авторизации если включена)
+- `POST /api/client/<client_name>/delete` - Удаление клиента через API (требует авторизации если включена)
+- `GET /login` - Страница входа через PocketID (доступна всегда)
+- `GET /callback` - Обработчик ответа от PocketID (доступен всегда)
+- `GET /logout` - Выход из системы (требует авторизации если включена)
+
+## Зависимости
+
+Убедитесь, что установлены все необходимые зависимости:
+
+```bash
+pip install flask requests

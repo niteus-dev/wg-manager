@@ -21,6 +21,15 @@
     <div class="container">
         <img src="{{ url_for('static', filename='logo.webp') }}" alt="Sofit Logo" class="logo">
         <h1 class="text-center">WireGuard Clients</h1>
+        
+        {% if session.user %}
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <div>
+                Welcome, <strong>{{ session.user.name }}</strong> ({{ session.user.email }})
+            </div>
+            <a href="/logout" class="btn btn-outline-secondary">Logout</a>
+        </div>
+        {% endif %}
 
         <form method="POST" action="/" class="mb-4">
             <div class="input-group">

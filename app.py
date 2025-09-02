@@ -1,11 +1,15 @@
-from flask import Flask
+from flask import Flask, session
 from routes import routes
 import config
 from flask import render_template
+import os
 
 
 app = Flask(__name__)
 app.config.from_object(config)
+
+# Необходимо для работы сессий
+app.secret_key = os.environ.get("SECRET_KEY", "your-secret-key-here")
 
 # Регистрируем Blueprint
 app.register_blueprint(routes)

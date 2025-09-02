@@ -1,11 +1,110 @@
-from flask import Blueprint, request, jsonify, send_file, render_template, redirect, url_for
+from flask import Blueprint, request, jsonify, send_file, render_template, redirect, url_for, session, abort, g
 import os
+import requests
+from urllib.parse import urlencode
 from wireguard import add_client, list_clients_with_ips, delete_client, suspend_client, unsuspend_client
 import config
 import math
 from ipaddress import ip_address
 
 routes = Blueprint("routes", __name__)
+
+# Делаем сессию доступной в шаблонах
+@routes.context_processor
+def inject_session():
+    return dict(session=session)
+
+# Middleware для проверки авторизации
+@routes.before_request
+def check_auth():
+    # Если авторизация отключена, пропускаем проверку
+    if not config.AUTH_ENABLED:
+        return None
+    
+    # Разрешаем доступ к маршрутам авторизации без проверки
+    allowed_routes = ['routes.login', 'routes.callback', 'static']
+    if request.endpoint in allowed_routes:
+        return None
+    
+    # Проверяем, авторизован ли пользователь
+    if 'user' not in session:
+        return redirect(url_for('routes.login'))
+    
+    return None
+
+# Маршрут для входа через PocketID
+@routes.route("/login")
+def login():
+    # Если авторизация отключена, перенаправляем на главную
+    if not config.AUTH_ENABLED:
+        return redirect(url_for('routes.index'))
+    
+    # Формируем параметры для авторизации через PocketID
+    params = {
+        'client_id': config.CLIENT_ID,
+        'redirect_uri': config.REDIRECT_URI,
+        'response_type': 'code',
+        'scope': 'openid profile email'
+    }
+    
+    # Перенаправляем пользователя на страницу авторизации PocketID
+    auth_url = f"{config.AUTH_URL}?{urlencode(params)}"
+    return redirect(auth_url)
+
+# Маршрут для обработки callback от PocketID
+@routes.route("/callback")
+def callback():
+    # Если авторизация отключена, перенаправляем на главную
+    if not config.AUTH_ENABLED:
+        return redirect(url_for('routes.index'))
+    
+    # Получаем код авторизации из параметров запроса
+    code = request.args.get('code')
+    if not code:
+        return "Authorization code not provided", 400
+    
+    # Обмениваем код на токен доступа
+    token_data = {
+        'grant_type': 'authorization_code',
+        'client_id': config.CLIENT_ID,
+        'client_secret': config.CLIENT_SECRET,
+        'redirect_uri': config.REDIRECT_URI,
+        'code': code
+    }
+    
+    try:
+        # Отправляем запрос на получение токена
+        token_response = requests.post(config.TOKEN_URL, data=token_data)
+        token_response.raise_for_status()
+        token_info = token_response.json()
+        
+        # Получаем информацию о пользователе
+        headers = {'Authorization': f"Bearer {token_info['access_token']}"}
+        user_response = requests.get(config.USERINFO_URL, headers=headers)
+        user_response.raise_for_status()
+        user_info = user_response.json()
+        
+        # Сохраняем информацию о пользователе в сессии
+        session['user'] = {
+            'id': user_info.get('sub'),
+            'name': user_info.get('name'),
+            'email': user_info.get('email')
+        }
+        
+        # Перенаправляем на главную страницу
+        return redirect(url_for('routes.index'))
+        
+    except requests.RequestException as e:
+        return f"Error during authentication: {str(e)}", 500
+    except KeyError as e:
+        return f"Missing data in authentication response: {str(e)}", 500
+
+# Маршрут для выхода
+@routes.route("/logout")
+def logout():
+    # Удаляем информацию о пользователе из сессии
+    session.pop('user', None)
+    return redirect(url_for('routes.login'))
 
 @routes.route("/", methods=["GET", "POST"])
 def index():
