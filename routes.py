@@ -6,6 +6,8 @@ from wireguard import add_client, list_clients_with_ips, delete_client, suspend_
 import config
 import math
 from ipaddress import ip_address
+from functools import wraps
+from flask import Response
 
 routes = Blueprint("routes", __name__)
 
@@ -13,6 +15,24 @@ routes = Blueprint("routes", __name__)
 @routes.context_processor
 def inject_session():
     return dict(session=session)
+
+# Декоратор для проверки Basic Auth для API
+def require_api_auth(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        # Если API авторизация отключена, пропускаем проверку
+        if not config.API_AUTH_ENABLED:
+            return f(*args, **kwargs)
+        
+        auth = request.authorization
+        if not auth or not (auth.username == config.API_USERNAME and auth.password == config.API_PASSWORD):
+            return Response(
+                'Could not verify your access level for that URL.\n'
+                'You have to login with proper credentials', 401,
+                {'WWW-Authenticate': 'Basic realm="Login Required"'}
+            )
+        return f(*args, **kwargs)
+    return decorated_function
 
 # Middleware для проверки авторизации
 @routes.before_request
@@ -26,7 +46,22 @@ def check_auth():
     if request.endpoint in allowed_routes:
         return None
     
-    # Проверяем, авторизован ли пользователь
+    # Проверяем, является ли запрос API запросом (по заголовкам или пути)
+    is_api_request = request.path.startswith('/api/') or request.is_json
+    
+    # Если это API запрос, проверяем API авторизацию
+    if is_api_request:
+        if config.API_AUTH_ENABLED:
+            auth = request.authorization
+            if not auth or not (auth.username == config.API_USERNAME and auth.password == config.API_PASSWORD):
+                return Response(
+                    'Could not verify your access level for that URL.\n'
+                    'You have to login with proper credentials', 401,
+                    {'WWW-Authenticate': 'Basic realm="Login Required"'}
+                )
+        return None
+    
+    # Для не-API запросов проверяем PocketID авторизацию
     if 'user' not in session:
         return redirect(url_for('routes.login'))
     
@@ -146,10 +181,12 @@ def index():
     
 
 @routes.route("/api/clients", methods=["GET"])
+@require_api_auth
 def list_clients():
     return jsonify(list_clients_with_ips())
 
 @routes.route("/api/clients", methods=["POST"])
+@require_api_auth
 def create_client():
     name = request.json.get("name")
     if not name:
@@ -161,6 +198,7 @@ def create_client():
         return jsonify({"error": str(e)}), 500
 
 @routes.route("/api/client/<client_name>")
+@require_api_auth
 def get_client_config(client_name):
     client_config_path = os.path.join(config.CLIENTS_DIR, f"{client_name}.conf")
     if os.path.exists(client_config_path):
@@ -183,18 +221,21 @@ def remove_client(name):
     return "Client not found", 404
 
 @routes.route("/api/client/<client_name>/suspend", methods=["POST"])
+@require_api_auth
 def api_suspend_client(client_name):
     if suspend_client(client_name):
         return jsonify({"message": f"Client {client_name} suspended"}), 200
     return jsonify({"error": "Client not found"}), 404
 
 @routes.route("/api/client/<client_name>/unsuspend", methods=["POST"])
+@require_api_auth
 def api_unsuspend_client(client_name):
     if unsuspend_client(client_name):
         return jsonify({"message": f"Client {client_name} unsuspended"}), 200
     return jsonify({"error": "Client not found"}), 404
 
 @routes.route("/api/client/<client_name>/delete", methods=["POST"])
+@require_api_auth
 def api_delete_client(client_name):
     if delete_client(client_name):
         return jsonify({"message": f"Client {client_name} deleted"}), 200

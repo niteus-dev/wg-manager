@@ -1,14 +1,14 @@
-# WG Manager с авторизацией через PocketID
+# WG Manager с авторизацией через PocketID и Basic Auth для API
 
-Это приложение для управления клиентами WireGuard с возможностью авторизации через PocketID.
+Это приложение для управления клиентами WireGuard с возможностью авторизации через PocketID для веб-интерфейса и Basic Auth для API запросов.
 
 ## Настройка авторизации
 
 ### Включение/выключение авторизации
 
-В файле `config.py` установите параметр `AUTH_ENABLED`:
-- `True` - включить авторизацию через PocketID
-- `False` - отключить авторизацию (приложение работает как раньше)
+В файле `config.py` установите параметры:
+- `AUTH_ENABLED` - включить/выключить авторизацию через PocketID для веб-интерфейса
+- `API_AUTH_ENABLED` - включить/выключить авторизацию для API запросов
 
 ### Настройка PocketID
 
@@ -31,6 +31,23 @@ export POCKETID_CLIENT_ID="ваш_client_id"
 export POCKETID_CLIENT_SECRET="ваш_client_secret"
 export POCKETID_REDIRECT_URI="http://ваш_домен/callback"
 export SECRET_KEY="ваш_секретный_ключ_для_сессий"
+```
+
+### Настройка Basic Auth для API
+
+Для работы с API необходимо установить следующие параметры в `config.py`:
+
+```python
+# Параметры для Basic Auth API
+API_USERNAME = os.environ.get("API_USERNAME", "admin")
+API_PASSWORD = os.environ.get("API_PASSWORD", "password")
+```
+
+Рекомендуется устанавливать эти параметры через переменные окружения:
+
+```bash
+export API_USERNAME="ваш_api_пользователь"
+export API_PASSWORD="ваш_api_пароль"
 ```
 
 ## Как это работает
@@ -59,6 +76,32 @@ export SECRET_KEY="ваш_секретный_ключ_для_сессий"
 5. Вы будете автоматически перенаправлены на страницу входа
 6. Нажмите на кнопку входа через PocketID
 7. После успешной авторизации вы попадете на главную страницу приложения
+
+## Использование API с Basic Auth
+
+Для выполнения запросов к API необходимо использовать Basic Auth с настроенными учетными данными:
+
+```bash
+# Получение списка клиентов
+curl -u admin:password http://localhost:8080/api/clients
+
+# Создание нового клиента
+curl -u admin:password -H "Content-Type: application/json" -d '{"name":"newclient"}' http://localhost:8080/api/clients
+
+# Получение конфигурации клиента
+curl -u admin:password http://localhost:8080/api/client/client_name
+
+# Отключение клиента
+curl -u admin:password -X POST http://localhost:8080/api/client/client_name/suspend
+
+# Включение клиента
+curl -u admin:password -X POST http://localhost:8080/api/client/client_name/unsuspend
+
+# Удаление клиента
+curl -u admin:password -X POST http://localhost:8080/api/client/client_name/delete
+```
+
+Замените `admin:password` на ваши учетные данные, установленные в `API_USERNAME` и `API_PASSWORD`.
 
 ## API маршруты
 
